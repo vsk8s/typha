@@ -5,6 +5,8 @@
 # Matches ending with a '/' only match directories.
 # ** can be used to match multiple levels of directory.
 
+obj-x86_64-linux-gnu
+
 # Global glob patterns.
 *.log
 *.coverprofile

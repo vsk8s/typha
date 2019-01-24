@@ -1,0 +1,24 @@
+#!/usr/bin/make -f
+include /usr/share/dpkg/pkg-info.mk
+export GOPATH
+
+override_dh_auto_clean:
+	-mkdir /tmp/src
+	GOPATH=/tmp glide i
+	dh_auto_clean -O--buildsystem=golang
+
+override_dh_auto_install:
+	dh_auto_install -- --no-source
+
+%:
+	dh $@ --buildsystem=golang --with=golang
+
+override_dh_auto_test:
+	# The test suite doesn't really work outside of the provided Docker
+	# container since it depends on a running etcd...
+	/bin/true
+
+override_dh_auto_build:
+	dh_auto_build -O--buildsystem=golang -- -ldflags "-X github.com/projectcalico/typha/pkg/buildinfo.GitVersion=$(DEB_VERSION_UPSTREAM) \
+        -X github.com/projectcalico/typha/pkg/buildinfo.BuildDate=1.1.1970 \
+        -X github.com/projectcalico/typha/pkg/buildinfo.GitRevision=$(DEB_VERSION_UPSTREAM)"
