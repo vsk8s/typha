@@ -16,6 +16,7 @@ package logutils
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"io"
 	"log/syslog"
@@ -57,6 +58,7 @@ const logQueueSize = 100
 // ConfigureEarlyLogging installs our logging adapters, and enables early logging to screen
 // if it is enabled by either the TYPHA_EARLYLOGSEVERITYSCREEN or TYPHA_LOGSEVERITYSCREEN
 // environment variable.
+// It also disables glog's log to disk default behaviour.
 func ConfigureEarlyLogging() {
 	// Log to stdout.  This prevents fluentd, for example, from interpreting all our logs as errors by default.
 	log.SetOutput(os.Stdout)
@@ -90,6 +92,14 @@ func ConfigureEarlyLogging() {
 	}
 	log.SetLevel(logLevelScreen)
 	log.Infof("Early screen log level set to %v", logLevelScreen)
+
+	// Disable to disk logging by glog - this will need to be updated if client-go is
+	// updated to a version making use of klog ( see https://github.com/projectcalico/kube-controllers/pull/362 for more info )
+	err := flag.Set("logtostderr", "true")
+	if err != nil {
+		log.WithError(err).Fatal("Failed to configure logging")
+	}
+	log.Infof("glog logging to disk disabled")
 }
 
 // ConfigureLogging uses the resolved configuration to complete the logging
@@ -228,8 +238,14 @@ func (f *Formatter) Format(entry *log.Entry) ([]byte, error) {
 	if b == nil {
 		b = &bytes.Buffer{}
 	}
-	fmt.Fprintf(b, "%s [%s][%d] %v %v: %v", stamp, levelStr, pid, fileName, lineNo, entry.Message)
-	appendKVsAndNewLine(b, entry)
+	_, err := fmt.Fprintf(b, "%s [%s][%d] %v %v: %v", stamp, levelStr, pid, fileName, lineNo, entry.Message)
+	if err != nil {
+		return nil, err
+	}
+	err = appendKVsAndNewLine(b, entry)
+	if err != nil {
+		return nil, err
+	}
 	return b.Bytes(), nil
 }
 
@@ -239,7 +255,7 @@ func (f *Formatter) Format(entry *log.Entry) ([]byte, error) {
 //
 //    INFO endpoint_mgr.go 434: Skipping configuration of interface because it is oper down.
 //    ifaceName="cali1234"
-func FormatForSyslog(entry *log.Entry) string {
+func FormatForSyslog(entry *log.Entry) (string, error) {
 	levelStr := strings.ToUpper(entry.Level.String())
 	fileName := entry.Data["__file__"]
 	lineNo := entry.Data["__line__"]
@@ -247,14 +263,20 @@ func FormatForSyslog(entry *log.Entry) string {
 	if b == nil {
 		b = &bytes.Buffer{}
 	}
-	fmt.Fprintf(b, "%s %v %v: %v", levelStr, fileName, lineNo, entry.Message)
-	appendKVsAndNewLine(b, entry)
-	return b.String()
+	_, err := fmt.Fprintf(b, "%s %v %v: %v", levelStr, fileName, lineNo, entry.Message)
+	if err != nil {
+		return "", err
+	}
+	err = appendKVsAndNewLine(b, entry)
+	if err != nil {
+		return "", err
+	}
+	return b.String(), nil
 }
 
 // appendKeysAndNewLine writes the KV pairs attached to the entry to the end of the buffer, then
 // finishes it with a newline.
-func appendKVsAndNewLine(b *bytes.Buffer, entry *log.Entry) {
+func appendKVsAndNewLine(b *bytes.Buffer, entry *log.Entry) error {
 	// Sort the keys for consistent output.
 	var keys []string = make([]string, 0, len(entry.Data))
 	for k := range entry.Data {
@@ -275,7 +297,10 @@ func appendKVsAndNewLine(b *bytes.Buffer, entry *log.Entry) {
 			stringifiedValue = stringer.String()
 		} else {
 			// No string method, use %#v to get a more thorough dump.
-			fmt.Fprintf(b, " %v=%#v", key, value)
+			_, err := fmt.Fprintf(b, " %v=%#v", key, value)
+			if err != nil {
+				return err
+			}
 			continue
 		}
 		b.WriteByte(' ')
@@ -284,6 +309,7 @@ func appendKVsAndNewLine(b *bytes.Buffer, entry *log.Entry) {
 		b.WriteString(stringifiedValue)
 	}
 	b.WriteByte('\n')
+	return nil
 }
 
 // NullWriter is a dummy writer that always succeeds and does nothing.
@@ -361,8 +387,11 @@ func NewStreamDestination(
 		channel: c,
 		writeLog: func(ql QueuedLog) error {
 			if ql.NumSkippedLogs > 0 {
-				fmt.Fprintf(writer, "... dropped %d logs ...\n",
+				_, err := fmt.Fprintf(writer, "... dropped %d logs ...\n",
 					ql.NumSkippedLogs)
+				if err != nil {
+					return err
+				}
 			}
 			_, err := writer.Write(ql.Message)
 			return err
@@ -440,7 +469,7 @@ func (d *Destination) LoopWritingLogs() {
 		err := d.writeLog(ql)
 		if err != nil {
 			counterLogErrors.Inc()
-			fmt.Fprintf(os.Stderr, "Failed to write to log: %v", err)
+			_, _ = fmt.Fprintf(os.Stderr, "Failed to write to log: %v", err)
 		}
 		ql.OnLogDone()
 	}
@@ -530,7 +559,10 @@ func (h *BackgroundHook) Fire(entry *log.Entry) (err error) {
 	if entry.Level <= h.syslogLevel {
 		// syslog gets its own log string since our default log string duplicates a lot of
 		// syslog metadata.  Only calculate that string if it's needed.
-		ql.SyslogMessage = FormatForSyslog(entry)
+		ql.SyslogMessage, err = FormatForSyslog(entry)
+		if err != nil {
+			ql.SyslogMessage = "Failed to format message: " + err.Error()
+		}
 	}
 
 	var waitGroup *sync.WaitGroup

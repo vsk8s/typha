@@ -97,7 +97,7 @@ PUSH_NONMANIFEST_IMAGES=$(filter-out $(PUSH_MANIFEST_IMAGES),$(PUSH_IMAGES))
 # location of docker credentials to push manifests
 DOCKER_CONFIG ?= $(HOME)/.docker/config.json
 
-GO_BUILD_VER?=v0.17
+GO_BUILD_VER?=v0.20
 # For building, we use the go-build image for the *host* architecture, even if the target is different
 # the one for the host should contain all the necessary cross-compilation tools
 # we do not need to use the arch since go-build:v0.15 now is multi-arch manifest
@@ -131,6 +131,12 @@ GENERATED_GO_FILES:=
 
 # All Typha go files.
 SRC_FILES:=$(shell find . $(foreach dir,$(NON_TYPHA_DIRS),-path ./$(dir) -prune -o) -type f -name '*.go' -print) $(GENERATED_GO_FILES)
+
+# If local build is set, then always build the binary since we might not
+# detect when another local repository has been modified.
+ifeq ($(LOCAL_BUILD),true)
+.PHONY: $(SRC_FILES)
+endif
 
 # Figure out the users UID/GID.  These are needed to run docker containers
 # as the current user and ensure that files built inside containers are
@@ -193,7 +199,8 @@ update-vendor:
 
 # vendor is a shortcut for force rebuilding the go vendor directory.
 .PHONY: vendor
-vendor vendor/.up-to-date: glide.lock
+vendor: vendor/.up-to-date
+vendor/.up-to-date: glide.lock
 	mkdir -p $$HOME/.glide
 	$(DOCKER_RUN) $(CALICO_BUILD) glide install --strip-vendor
 	touch vendor/.up-to-date
@@ -209,9 +216,9 @@ update-libcalico:
         echo "Updating libcalico to $(LIBCALICO_VERSION) from $(LIBCALICO_REPO)"; \
         export OLD_VER=$$(grep --after 50 libcalico-go glide.yaml |grep --max-count=1 --only-matching --perl-regexp "version:\s*\K[^\s]+") ;\
         echo "Old version: $$OLD_VER";\
-        if [ $(LIBCALICO_VERSION) != $$OLD_VER ]; then \
+	if [ "$(LIBCALICO_VERSION)" != $$OLD_VER ]; then \
             sed -i "s/$$OLD_VER/$(LIBCALICO_VERSION)/" glide.yaml && \
-            if [ $(LIBCALICO_REPO) != "github.com/projectcalico/libcalico-go" ]; then \
+	    if [ "$(LIBCALICO_REPO)" != "github.com/projectcalico/libcalico-go" ]; then \
               glide mirror set https://github.com/projectcalico/libcalico-go $(LIBCALICO_REPO) --vcs git; glide mirror list; \
             fi;\
           glide up --strip-vendor || glide up --strip-vendor; \
@@ -329,6 +336,14 @@ check-licenses: check-licenses/dependency-licenses.txt bin/check-licenses
 check-licenses/dependency-licenses.txt: vendor/.up-to-date
 	$(DOCKER_RUN) $(CALICO_BUILD) sh -c 'licenses ./cmd/calico-typha > check-licenses/dependency-licenses.tmp && \
 	                          mv check-licenses/dependency-licenses.tmp check-licenses/dependency-licenses.txt'
+
+foss-checks: vendor
+	@echo Running $@...
+	@docker run --rm -v $(CURDIR):/go/src/$(PACKAGE_NAME):rw \
+	  -e LOCAL_USER_ID=$(LOCAL_USER_ID) \
+	  -e FOSSA_API_KEY=$(FOSSA_API_KEY) \
+	  -w /go/src/$(PACKAGE_NAME) \
+	  $(CALICO_BUILD) /usr/local/bin/fossa
 
 .PHONY: go-meta-linter
 go-meta-linter: vendor/.up-to-date $(GENERATED_GO_FILES)

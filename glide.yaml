@@ -5,14 +5,14 @@ import:
 - package: github.com/Workiva/go-datastructures
   subpackages:
   - trie/ctrie
-# Need to pin to an older version as our code uses code that is deprecated in newer versions. 
+# Need to pin to an older version as our code uses code that is deprecated in newer versions.
 - package: github.com/docopt/docopt-go
   version: ^0.6.2
 - package: github.com/go-ini/ini
 - package: github.com/kardianos/osext
 - package: github.com/mipearson/rfw
 - package: github.com/projectcalico/libcalico-go
-  version: 44d4f72e33fd2796b3fffdc5b204641c9618b62f
+  version: ac36d966132f2019eb4afc4d3823ed2a98564d2f
   subpackages:
   - lib/apiconfig
   - lib/backend/api
@@ -28,9 +28,12 @@ import:
   subpackages:
   - prometheus
   - prometheus/promhttp
+# Use our fork, because v1.0.5 causes test breakages due to problems with our log formatting code,
+# but other deps require newer version because of the SetOutput function. Our fork backports
+# the missing stuff on top of v1.0.4.
 - package: github.com/sirupsen/logrus
-  # v1.0.5 causes test breakages.
-  version: v1.0.4
+  repo: https://github.com/projectcalico/logrus
+  version: v1.0.4-calico
 - package: k8s.io/apimachinery
   subpackages:
   - pkg/apis/meta/v1
