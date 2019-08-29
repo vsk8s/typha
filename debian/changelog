@@ -1,3 +1,9 @@
+calico-typha (3.8.2-1) unstable; urgency=medium
+
+  * Bump to 3.8.2
+
+ -- Maximilian Falkenstein <maximilian.falkenstein@sos.ethz.ch>  Thu, 29 Aug 2019 20:04:56 +0200
+
 calico-typha (3.4.0-1) unstable; urgency=medium
 
   * Initial release
