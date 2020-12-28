@@ -1,0 +1,25 @@
+#!/usr/bin/make -f
+include /usr/share/dpkg/pkg-info.mk
+
+GO_LDFLAGS += -X github.com/projectcalico/typha/pkg/buildinfo.GitVersion=$(DEB_VERSION_UPSTREAM)
+GO_LDFLAGS += -X github.com/projectcalico/typha/pkg/buildinfo.BuildDate=1.1.1970
+GO_LDFLAGS += -X github.com/projectcalico/typha/pkg/buildinfo.GitRevision=$(DEB_VERSION_UPSTREAM)
+
+export CGO_CFLAGS            := $(CFLAGS)
+export CGO_CPPFLAGS          := $(CPPFLAGS)
+export GO111MODULE=on
+export GOPROXY=
+
+override_dh_auto_install:
+	dh_auto_install -- --no-source
+
+%:
+	dh $@ --buildsystem=golang --with=golang --builddirectory=_build
+
+override_dh_auto_test:
+	# The test suite doesn't really work outside of the provided Docker
+	# container since it depends on a running etcd...
+	/bin/true
+
+override_dh_auto_build:
+	dh_auto_build -- -tags '$(TAGS)' -ldflags '$(GO_LDFLAGS)'

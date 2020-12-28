@@ -1,0 +1,6 @@
+.debhelper
+files
+*.log
+*.substvars
+calico-typha-client
+calico-typha-server
