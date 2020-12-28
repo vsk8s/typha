@@ -17,6 +17,10 @@ build:
     - export PATH=/usr/lib/go-1.15/bin:$PATH 
     - export GOROOT=/usr/lib/go-1.15
     - export GOPATH=/root/go
+    - rm /usr/bin/go || /bin/true 
+    - rm /usr/bin/gofmt || /bin/true
+    - ln -s /usr/lib/go-1.15/bin/go /usr/bin/go
+    - ln -s /usr/lib/go-1.15/bin/gofmt /usr/bin/gofmt
   script:
     - gbp buildpackage --git-ignore-branch -b -us -uc
     - mv ../*.deb . # GitLab can't copy from the parent directory...
